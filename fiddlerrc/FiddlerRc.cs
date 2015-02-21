@@ -19,7 +19,6 @@ namespace fiddlerrc
 
         public FiddlerRc()
         {
-            this.lua = new Lua();
         }
 
         public void AutoTamperRequestAfter(Session oSession)
@@ -44,28 +43,69 @@ namespace fiddlerrc
 
         public void OnBeforeUnload()
         {
+            if (this.lua != null)
+            {
+                this.lua.Dispose();
+                this.lua = null;
+            }
         }
 
         public void OnLoad()
         {
-            FiddlerApplication.Log.LogString("fiddlerrc loaded");
+            this.Initialize();
+        }
 
-            var rcPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Fiddler2", "Scripts", "fiddler.lua");
+        public void Initialize()
+        {
+            if (this.lua != null)
+            {
+                this.lua.Dispose();
+            }
 
+            this.lua = new Lua();
+            this.lua.NewTable("fiddler");
+
+            var rcPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "fiddler.lua");
             if (!File.Exists(rcPath))
             {
-                FiddlerApplication.Log.LogString("Didn't find " + rcPath);
+                FiddlerApplication.Log.LogString("File not found: " + rcPath);
                 return;
             }
 
-            try
-            {
-            }
-            catch (Exception ex)
-            {
-                FiddlerApplication.Log.LogString("Failed to load " + rcPath);
-                FiddlerApplication.Log.LogString(ex.StackTrace);
-            }
+            this.lua["fiddler.MYRC"] = rcPath;
+
+            this.lua.RegisterFunction("print", FiddlerApplication.Log, typeof(Logger).GetMethod("LogString"));
+
+            this.lua.DoString(@"
+local oldPrint = print
+
+function print( ... )
+	-- redefine the print to use erc._log
+	local arguments = {...}
+	local printResult = ''
+	local first = true
+	for i,v in ipairs(arguments) do
+		if not first then
+			printResult = '\t' .. printResult
+		end
+		printResult = printResult .. tostring(v)
+	end
+	printResult = printResult
+	oldPrint(printResult)
+end
+
+print('loading ' .. fiddler.MYRC)
+
+dofile(fiddler.MYRC)
+
+print('loaded ' .. fiddler.MYRC)
+
+");
+        }
+
+        private void Log(string message)
+        {
+            FiddlerApplication.Log.LogString(message);
         }
     }
 }
